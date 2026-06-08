@@ -3,12 +3,13 @@ import 'main.dart';
 import 'cek_ai.dart';
 import 'informasi.dart';
 import 'notifikasi.dart';
+import 'api_config.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -88,26 +89,77 @@ class _HomeState extends State<HomePage> {
         );
         final String topic = c[0].topic;
 
-        // Update UI pakai setState biar angkanya berubah otomatis
-        setState(() {
-          // --- Monitoring (data sensor ESP32) ---
-          if (topic == 'AgroSquad/monitoring/suhu') {
-            suhuSaatIni = pt;
-          } else if (topic == 'AgroSquad/monitoring/lembab') {
-            lembabSaatIni = pt;
+        debugPrint('[MQTT] Pesan masuk dari $topic: $pt');
 
-          // --- Kontrol (sinkronisasi dari Web) ---
-          } else if (topic == 'AgroSquad/kontrol/batas_suhu') {
-            suhu = int.tryParse(pt) ?? suhu;
-          } else if (topic == 'AgroSquad/kontrol/batas_lembab') {
-            kelembaban = int.tryParse(pt) ?? kelembaban;
-          } else if (topic == 'AgroSquad/kontrol/durasi_suhu') {
-            durasiKritis = int.tryParse(pt) ?? durasiKritis;
-          } else if (topic == 'AgroSquad/kontrol/durasi_jadwal') {
-            durasiJadwal = int.tryParse(pt) ?? durasiJadwal;
-          } else if (topic == 'AgroSquad/kontrol/jadwal_mingguan') {
-            // Jadwal format kompleks, fetch ulang dari DB agar aman
-            fetchSettings();
+        // WAJIB setState agar UI update otomatis
+        setState(() {
+          try {
+            // Cek apakah payload berupa JSON
+            if (pt.trim().startsWith('{')) {
+              final Map<String, dynamic> decodedData = jsonDecode(pt);
+              
+              // Update Batas Ambang & Durasi (menggunakan key dari server)
+              suhu = int.tryParse(decodedData['batas_suhu']?.toString() ?? '') ?? suhu;
+              kelembaban = int.tryParse(decodedData['batas_lembab']?.toString() ?? '') ?? kelembaban;
+              durasiKritis = int.tryParse(decodedData['durasi_suhu']?.toString() ?? '') ?? durasiKritis;
+              durasiJadwal = int.tryParse(decodedData['durasi_jadwal']?.toString() ?? '') ?? durasiJadwal;
+
+              // Update Jadwal Jam ("HH:mm")
+              if (decodedData['jadwal_jam'] != null) {
+                final parts = decodedData['jadwal_jam'].toString().split(':');
+                if (parts.length == 2) {
+                  selectedTime = TimeOfDay(
+                    hour: int.tryParse(parts[0]) ?? selectedTime.hour,
+                    minute: int.tryParse(parts[1]) ?? selectedTime.minute,
+                  );
+                }
+              }
+
+              // Update Jadwal Hari ("1,0,1,0,0,0,0")
+              if (decodedData['jadwal_hari'] != null) {
+                final bits = decodedData['jadwal_hari'].toString().split(',');
+                final keys = selectedDays.keys.toList();
+                for (int i = 0; i < bits.length && i < keys.length; i++) {
+                  selectedDays[keys[i]] = bits[i] == '1';
+                }
+              }
+            } else {
+              // Jika payload bukan JSON (format plain string lama)
+              if (topic == 'AgroSquad/monitoring/suhu') {
+                suhuSaatIni = pt;
+              } else if (topic == 'AgroSquad/monitoring/lembab') {
+                lembabSaatIni = pt;
+              } else if (topic == 'AgroSquad/kontrol/batas_suhu') {
+                suhu = int.tryParse(pt) ?? suhu;
+              } else if (topic == 'AgroSquad/kontrol/batas_lembab') {
+                kelembaban = int.tryParse(pt) ?? kelembaban;
+              } else if (topic == 'AgroSquad/kontrol/durasi_suhu') {
+                durasiKritis = int.tryParse(pt) ?? durasiKritis;
+              } else if (topic == 'AgroSquad/kontrol/durasi_jadwal') {
+                durasiJadwal = int.tryParse(pt) ?? durasiJadwal;
+              } else if (topic == 'AgroSquad/kontrol/jadwal_mingguan') {
+                // Jika format plain "1,0,0,0,0,0,0#15:30"
+                final parts = pt.split('#');
+                if (parts.length == 2) {
+                  final bits = parts[0].split(',');
+                  final keys = selectedDays.keys.toList();
+                  for (int i = 0; i < bits.length && i < keys.length; i++) {
+                    selectedDays[keys[i]] = bits[i] == '1';
+                  }
+                  final tParts = parts[1].split(':');
+                  if (tParts.length == 2) {
+                    selectedTime = TimeOfDay(
+                      hour: int.tryParse(tParts[0]) ?? selectedTime.hour,
+                      minute: int.tryParse(tParts[1]) ?? selectedTime.minute,
+                    );
+                  }
+                } else {
+                  fetchSettings(); // Fallback
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('Error parsing MQTT payload: $e');
           }
         });
       });
@@ -286,9 +338,9 @@ class _HomeState extends State<HomePage> {
 
   /// Kirim data setting ke backend Laravel via HTTP POST dengan Sanctum token.
   Future<void> simpanKeDatabase(String key, String value) async {
-    // 1. Ambil token dari SharedPreferences
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    // 1. Ambil token dari Secure Storage
+    const storage = FlutterSecureStorage();
+    final token = await storage.read(key: 'token');
 
     // 2. Hentikan jika token tidak ditemukan
     if (token == null) {
@@ -297,10 +349,9 @@ class _HomeState extends State<HomePage> {
     }
 
     // 3. Kirim POST ke endpoint API Laravel
-    const url = 'https://unjoyfully-decrepit-dian.ngrok-free.dev/api/update-setting';
     try {
       final response = await http.post(
-        Uri.parse(url),
+        ApiConfig.getUri('/update-setting'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -330,9 +381,9 @@ class _HomeState extends State<HomePage> {
 
   /// Ambil semua setting dari database Laravel saat halaman dimuat.
   Future<void> fetchSettings() async {
-    // 1. Ambil token dari SharedPreferences
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    // 1. Ambil token dari Secure Storage
+    const storage = FlutterSecureStorage();
+    final token = await storage.read(key: 'token');
 
     if (token == null) {
       debugPrint('[FETCH] Token tidak ditemukan, user belum login');
@@ -340,10 +391,9 @@ class _HomeState extends State<HomePage> {
     }
 
     // 2. HTTP GET ke endpoint /api/settings
-    const url = 'https://unjoyfully-decrepit-dian.ngrok-free.dev/api/settings';
     try {
       final response = await http.get(
-        Uri.parse(url),
+        ApiConfig.getUri('/settings'),
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',

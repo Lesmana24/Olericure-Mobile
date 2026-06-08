@@ -4,11 +4,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'foto_ai.dart';
 import 'validasi_foto.dart';
 import 'hasil_ai.dart';
+import 'api_config.dart';
 
 class CekAIPage extends StatefulWidget {
   const CekAIPage({super.key});
@@ -40,13 +41,13 @@ class _CekAIPageState extends State<CekAIPage> {
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      const storage = FlutterSecureStorage();
+      final token = await storage.read(key: 'token');
 
       if (token == null) return;
 
       final response = await http.get(
-        Uri.parse('https://unjoyfully-decrepit-dian.ngrok-free.dev/api/ai/history'),
+        ApiConfig.getUri('/ai/history'),
         headers: {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',
@@ -96,7 +97,7 @@ class _CekAIPageState extends State<CekAIPage> {
               color: const Color(0xFF3E792F),
               onRefresh: () async {
                 await _fetchHistory();
-                if (!mounted) return;
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Memperbarui riwayat...'),
@@ -437,11 +438,11 @@ class _CekAIPageState extends State<CekAIPage> {
     if (konfirmasi != true) return;
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      const storage = FlutterSecureStorage();
+      final token = await storage.read(key: 'token');
 
       final response = await http.delete(
-        Uri.parse('https://unjoyfully-decrepit-dian.ngrok-free.dev/api/ai/history/$id'),
+        ApiConfig.getUri('/ai/history/$id'),
         headers: {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',
@@ -472,7 +473,7 @@ class _CekAIPageState extends State<CekAIPage> {
     final id = itemData['id'];
     final plantName = itemData['plant_name'] ?? 'Tanaman';
     final diseaseName = itemData['disease_name'] ?? itemData['ai_health_status'] ?? 'Tidak Diketahui';
-    final imagePath = itemData['image_path'];
+    final image = itemData['image'] ?? itemData['image_path'];
     final createdAt = itemData['created_at'];
 
     final isHealthy = diseaseName.toString().toLowerCase().contains('sehat') || 
@@ -507,9 +508,9 @@ class _CekAIPageState extends State<CekAIPage> {
               // Bagian Kiri (Thumbnail)
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: imagePath != null && imagePath.toString().isNotEmpty
+                child: image != null && image.toString().isNotEmpty
                     ? Image.network(
-                        'https://unjoyfully-decrepit-dian.ngrok-free.dev/storage/$imagePath',
+                        ApiConfig.getStorageUrl(image),
                         width: 60,
                         height: 60,
                         fit: BoxFit.cover,

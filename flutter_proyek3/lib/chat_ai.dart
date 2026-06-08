@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'api_config.dart';
 
 class ChatMessage {
   final String text;
@@ -13,11 +15,13 @@ class ChatMessage {
 class ChatAIPage extends StatefulWidget {
   final String plantName;
   final String diseaseName;
+  final int? scanId;
 
   const ChatAIPage({
     super.key,
     required this.plantName,
     required this.diseaseName,
+    this.scanId,
   });
 
   @override
@@ -39,6 +43,45 @@ class _ChatAIPageState extends State<ChatAIPage> {
         false,
       ),
     );
+    if (widget.scanId != null) {
+      _fetchChatHistory();
+    }
+  }
+
+  Future<void> _fetchChatHistory() async {
+    try {
+      const storage = FlutterSecureStorage();
+      final token = await storage.read(key: 'token');
+
+      if (token == null) return;
+
+      final response = await http.get(
+        ApiConfig.getUri('/ai/chats/${widget.scanId}'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final responseBody = jsonDecode(response.body);
+        if (responseBody['status'] == 'success') {
+          final List<dynamic> chatList = responseBody['data'] ?? [];
+          setState(() {
+            for (var chat in chatList) {
+              final text = chat['message'] ?? '';
+              final isUser = chat['sender'] == 'user';
+              if (text.isNotEmpty) {
+                _messages.add(ChatMessage(text, isUser));
+              }
+            }
+          });
+          _scrollToBottom();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching chat history: $e");
+    }
   }
 
   Future<void> _sendMessage(String text) async {
@@ -53,8 +96,8 @@ class _ChatAIPageState extends State<ChatAIPage> {
     _scrollToBottom();
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      const storage = FlutterSecureStorage();
+      final token = await storage.read(key: 'token');
 
       if (token == null) {
         setState(() {
@@ -65,7 +108,7 @@ class _ChatAIPageState extends State<ChatAIPage> {
       }
 
       final response = await http.post(
-        Uri.parse('https://unjoyfully-decrepit-dian.ngrok-free.dev/api/mobile-chat'),
+        ApiConfig.getUri('/mobile-chat'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -75,6 +118,7 @@ class _ChatAIPageState extends State<ChatAIPage> {
           "message": text,
           "plant_name": widget.plantName,
           "disease": widget.diseaseName,
+          if (widget.scanId != null) "scan_id": widget.scanId,
         }),
       );
 
@@ -140,6 +184,9 @@ class _ChatAIPageState extends State<ChatAIPage> {
                 return Align(
                   alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
                   child: Container(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.8,
+                    ),
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
@@ -151,13 +198,33 @@ class _ChatAIPageState extends State<ChatAIPage> {
                         bottomRight: Radius.circular(isUser ? 0 : 16),
                       ),
                     ),
-                    child: Text(
-                      message.text,
-                      style: TextStyle(
-                        color: isUser ? Colors.white : Colors.black87,
-                        fontSize: 15,
-                      ),
-                    ),
+                    child: isUser
+                        ? Text(
+                            message.text,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                            ),
+                          )
+                        : MarkdownBody(
+                            data: message.text,
+                            styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                              p: const TextStyle(
+                                color: Colors.black87,
+                                fontSize: 15,
+                                height: 1.4,
+                              ),
+                              listBullet: const TextStyle(
+                                color: Colors.black87,
+                                fontSize: 15,
+                              ),
+                              strong: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
                   ),
                 );
               },

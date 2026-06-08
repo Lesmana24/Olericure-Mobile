@@ -2,9 +2,10 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_proyek3/cek_ai.dart';
 import 'chat_ai.dart';
+import 'api_config.dart';
 
 class HasilAIPage extends StatefulWidget {
   final Map<String, dynamic> data;
@@ -35,8 +36,8 @@ class _HasilAIPageState extends State<HasilAIPage> {
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      const storage = FlutterSecureStorage();
+      final token = await storage.read(key: 'token');
 
       if (token == null) {
         if (!mounted) return;
@@ -47,7 +48,7 @@ class _HasilAIPageState extends State<HasilAIPage> {
       }
 
       final response = await http.post(
-        Uri.parse('https://unjoyfully-decrepit-dian.ngrok-free.dev/api/ai/store'),
+        ApiConfig.getUri('/ai/store'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -59,6 +60,8 @@ class _HasilAIPageState extends State<HasilAIPage> {
       if (!mounted) return;
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = jsonDecode(response.body);
+        final newId = responseData['id'];
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Laporan berhasil disimpan!'),
@@ -67,6 +70,9 @@ class _HasilAIPageState extends State<HasilAIPage> {
         );
         setState(() {
           _isSaved = true;
+          if (newId != null) {
+            widget.data['id'] = newId;
+          }
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -238,6 +244,9 @@ class _HasilAIPageState extends State<HasilAIPage> {
                     builder: (_) => ChatAIPage(
                       plantName: data['plant_name'] ?? 'Tanaman',
                       diseaseName: data['disease_name'] ?? 'Sehat',
+                      scanId: data['id'] != null
+                          ? int.tryParse(data['id'].toString())
+                          : null,
                     ),
                   ),
                 );
@@ -272,9 +281,9 @@ class _HasilAIPageState extends State<HasilAIPage> {
                         fit: BoxFit.cover,
                       ),
                       const SizedBox(height: 20),
-                    ] else if (widget.data.containsKey('image_path')) ...[
+                    ] else if (widget.data.containsKey('image') || widget.data.containsKey('image_path')) ...[
                       Image.network(
-                        'https://unjoyfully-decrepit-dian.ngrok-free.dev/storage/${widget.data['image_path']}',
+                        ApiConfig.getStorageUrl(widget.data['image'] ?? widget.data['image_path']),
                         height: 250,
                         width: double.infinity,
                         fit: BoxFit.cover,

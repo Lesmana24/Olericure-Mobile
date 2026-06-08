@@ -1,11 +1,11 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/material.dart';
 import 'home.dart';
-
-// URL Ngrok lu + /api (Jangan lupa di-update kalau ngroknya direstart)
-const String baseUrl = 'https://unjoyfully-decrepit-dian.ngrok-free.dev/api';
+import 'api_config.dart';
 
 // ==========================================
 // 1. FUNGSI LOGIKA REGISTER
@@ -13,13 +13,17 @@ const String baseUrl = 'https://unjoyfully-decrepit-dian.ngrok-free.dev/api';
 Future<void> prosesRegister(BuildContext context, String nama, String password) async {
   try {
     final response = await http.post(
-      Uri.parse('$baseUrl/register'),
-      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      ApiConfig.getUri('/register'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
+      },
       body: jsonEncode({
         'nama': nama,
         'password': password,
       }),
-    );
+    ).timeout(const Duration(seconds: 15));
 
     final data = jsonDecode(response.body);
 
@@ -28,10 +32,10 @@ Future<void> prosesRegister(BuildContext context, String nama, String password) 
       // Tangkep Tokennya
       String token = data['token'];
 
-      // Simpen Token ke laci HP (Shared Preferences)
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', token);
-      await prefs.setBool('isLoggedIn', true); // Penanda udah login
+      // Simpen Token ke Secure Storage
+      const storage = FlutterSecureStorage();
+      await storage.write(key: 'token', value: token);
+      await storage.write(key: 'isLoggedIn', value: 'true'); // Penanda udah login
 
       // Guard: pastikan widget masih ada sebelum pakai context
       if (!context.mounted) return;
@@ -54,8 +58,30 @@ Future<void> prosesRegister(BuildContext context, String nama, String password) 
         SnackBar(content: Text('Gagal: ${data['message'] ?? 'Nama sudah dipakai'}'), backgroundColor: Colors.red),
       );
     }
+  } on TimeoutException catch (e) {
+    debugPrint('Timeout Register: $e');
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Gagal terhubung ke server. Pastikan internet stabil atau coba gunakan jaringan seluler.'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  } on SocketException catch (e) {
+    debugPrint('SocketException Register: $e');
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Gagal terhubung ke server. Pastikan internet stabil atau coba gunakan jaringan seluler.'),
+        backgroundColor: Colors.red,
+      ),
+    );
   } catch (e) {
     debugPrint('Error Register: $e');
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Terjadi kesalahan: $e'), backgroundColor: Colors.red),
+    );
   }
 }
 
@@ -65,13 +91,17 @@ Future<void> prosesRegister(BuildContext context, String nama, String password) 
 Future<void> prosesLogin(BuildContext context, String nama, String password) async {
   try {
     final response = await http.post(
-      Uri.parse('$baseUrl/login'),
-      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      ApiConfig.getUri('/login'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
+      },
       body: jsonEncode({
         'nama': nama,
         'password': password,
       }),
-    );
+    ).timeout(const Duration(seconds: 15));
 
     final data = jsonDecode(response.body);
 
@@ -79,9 +109,9 @@ Future<void> prosesLogin(BuildContext context, String nama, String password) asy
     if (response.statusCode == 200 && data['success'] == true) {
       String token = data['token'];
 
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', token);
-      await prefs.setBool('isLoggedIn', true);
+      const storage = FlutterSecureStorage();
+      await storage.write(key: 'token', value: token);
+      await storage.write(key: 'isLoggedIn', value: 'true');
 
       // Guard: pastikan widget masih ada sebelum pakai context
       if (!context.mounted) return;
@@ -102,7 +132,29 @@ Future<void> prosesLogin(BuildContext context, String nama, String password) asy
         SnackBar(content: Text('Gagal: ${data['message']}'), backgroundColor: Colors.red),
       );
     }
+  } on TimeoutException catch (e) {
+    debugPrint('Timeout Login: $e');
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Gagal terhubung ke server. Pastikan internet stabil atau coba gunakan jaringan seluler.'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  } on SocketException catch (e) {
+    debugPrint('SocketException Login: $e');
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Gagal terhubung ke server. Pastikan internet stabil atau coba gunakan jaringan seluler.'),
+        backgroundColor: Colors.red,
+      ),
+    );
   } catch (e) {
     debugPrint('Error Login: $e');
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Terjadi kesalahan: $e'), backgroundColor: Colors.red),
+    );
   }
 }

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'api_config.dart';
 
 class NotifikasiPage extends StatefulWidget {
   const NotifikasiPage({super.key});
@@ -14,19 +15,16 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
   List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
 
-  static const String _baseUrl =
-      'https://unjoyfully-decrepit-dian.ngrok-free.dev/api';
-
   @override
   void initState() {
     super.initState();
     fetchNotifications();
   }
 
-  /// Ambil token dari SharedPreferences.
+  /// Ambil token dari Secure Storage.
   Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
+    const storage = FlutterSecureStorage();
+    return await storage.read(key: 'token');
   }
 
   /// Ambil semua notifikasi dari API Laravel.
@@ -40,7 +38,7 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('$_baseUrl/notifications'),
+        ApiConfig.getUri('/notifications'),
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
@@ -74,7 +72,7 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
 
     try {
       final response = await http.delete(
-        Uri.parse('$_baseUrl/notifications/clear'),
+        ApiConfig.getUri('/notifications/clear'),
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',

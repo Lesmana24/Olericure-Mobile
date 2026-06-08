@@ -2,9 +2,10 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_proyek3/cek_ai.dart';
 import 'hasil_ai.dart';
+import 'api_config.dart';
 
 class ValidasiFoto extends StatefulWidget {
   final Uint8List? imageBytes;
@@ -19,8 +20,8 @@ class _ValidasiFotoState extends State<ValidasiFoto> {
   bool _isLoading = false;
 
   Future<void> _uploadFotoAIToServer() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    const storage = FlutterSecureStorage();
+    final token = await storage.read(key: 'token');
 
     if (token == null) {
       if (!mounted) return;
@@ -37,7 +38,7 @@ class _ValidasiFotoState extends State<ValidasiFoto> {
     try {
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('https://unjoyfully-decrepit-dian.ngrok-free.dev/api/ai/upload'),
+        ApiConfig.getUri('/ai/upload'),
       );
 
       request.headers.addAll({
