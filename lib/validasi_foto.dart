@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter_proyek3/cek_ai.dart';
+import 'package:olericure_mobile/cek_ai.dart';
 import 'hasil_ai.dart';
 import 'api_config.dart';
 
